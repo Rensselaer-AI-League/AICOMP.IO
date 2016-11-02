@@ -5,6 +5,8 @@ import requests
 import random
 import json
 
+import bommerGame
+
 practice = True
 
 if practice:
@@ -28,15 +30,23 @@ print(playerID)
 possibleMoves = ['mu', 'ml', 'mr', 'md', 'tu', 'tl', 'tr', 'td', 
                  'b', '', 'op', 'bp', 'buy_count', 'buy_range', 'buy_pierce', 'buy_block']
 
-output = {'state': 'in progress'}
+game = bommerGame.BommerGame()
 
-while output['state'] != 'complete':
+
+while True:
     randomInt = random.randint(0,len(possibleMoves)-1)
 
     # submit sample move
     r = requests.post('http://upe21.cs.rpi.edu:3000/api/games/submit/' + gameID, 
                       data={'playerID': playerID, 'move': possibleMoves[randomInt], 
                             'devkey': userInfo["devkey"]}) 
-    json = r.json()
-    print(json)
-    output = json
+
+    game.update(r.json())
+
+    if not game:
+        break
+
+    #json = r.json()
+    #print(json)
+    #print()
+    #output = json
