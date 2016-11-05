@@ -9,15 +9,19 @@ import bommerGame
 
 practice = True
 
+#domain = 'http://upe21.cs.rpi.edu:3000'
+domain = 'http://aicomp.io'
+
 if practice:
-    url = 'http://upe21.cs.rpi.edu:3000/api/games/practice'
+    url = '%s/api/games/practice' % domain
 else:
-    url = 'http://upe21.cs.rpi.edu:3000/api/games/search'
+    url = '%s/api/games/search' % domain
 
 with open('userinfo.json') as f:
     userInfo = json.load(f)
 
 # search for new game
+print userInfo
 r = requests.post(url, data=userInfo) 
 
 # when request comes back, that means you've found a match! (validation if server goes down?)
@@ -30,21 +34,25 @@ print(playerID)
 possibleMoves = ['mu', 'ml', 'mr', 'md', 'tu', 'tl', 'tr', 'td', 
                  'b', '', 'op', 'bp', 'buy_count', 'buy_range', 'buy_pierce', 'buy_block']
 
-game = bommerGame.BommerGame()
+r = requests.post(('%s/api/games/submit/' % domain) + gameID, 
+                      data={'playerID': playerID, 'devkey': userInfo["devkey"]})
+
+game = bommerGame.BommerGame(r.json())
 
 
 while True:
-    randomInt = random.randint(0,len(possibleMoves)-1)
 
     # submit sample move
-    r = requests.post('http://upe21.cs.rpi.edu:3000/api/games/submit/' + gameID, 
-                      data={'playerID': playerID, 'move': possibleMoves[randomInt], 
+    r = requests.post(('%s/api/games/submit/' % domain) + gameID, 
+                      data={'playerID': playerID, 'move': game.move(), 
                             'devkey': userInfo["devkey"]}) 
 
-    game.update(r.json())
-
-    if not game:
+    print bool(game)
+    if r.json()[u'state'] != 'in progress':
         break
+
+    #print r.json()
+    game.update(r.json())
 
     #json = r.json()
     #print(json)
