@@ -66,6 +66,15 @@ u'opponent': {
 
 import random as r
 
+def weightedChoice(choices):
+   total = sum(w for c, w in choices)
+   r = random.uniform(0, total)
+   upto = 0
+   for c, w in choices:
+      if upto + w >= r:
+         return c
+      upto += w
+
 def tryish(error, f, *args, **kargs):
     try:
         return f(*args, **kargs)
@@ -79,6 +88,9 @@ def gridToListIndex(rowLen, x, y):
 def listToGridPos(rowLen, i):
     return (i / rowLen, i % rowLen)
 
+possibleMoves = ['mu', 'ml', 'mr', 'md', 'tu', 'tl', 'tr', 'td', 
+                 'b', '', 'op', 'bp', 'buy_count', 'buy_range', 
+                 'buy_pierce', 'buy_block']
 oppMap = {'u':'d', 'd':'u', 'l':'r', 'r':'l', 'h':'h'}
 dirMap = {'u':1, 'd':3, 'l':0, 'r':2, 'h':-1, -1:'h', 2:'r', 0:'l', 3:'d', 1:'u'}
 
@@ -136,10 +148,10 @@ class Pos:
 
     def getAdj(self):
         l = {}
-        l['u'] = Pos(self.x, self.y - 1)
-        l['d'] = Pos(self.x, self.y + 1)
-        l['l'] = Pos(self.x - 1, self.y)
-        l['r'] = Pos(self.x + 1, self.y)
+        l[Dir('u')] = Pos(self.x, self.y - 1)
+        l[Dir('d')] = Pos(self.x, self.y + 1)
+        l[Dir('l')] = Pos(self.x - 1, self.y)
+        l[Dir('r')] = Pos(self.x + 1, self.y)
         return l
 
     def getDir(self, dir):
@@ -163,6 +175,9 @@ class Portal:
         self.owner = owner
         self.addOther(other)
 
+    def __hash__(self):
+        return hash((self.pos, self.color, self.direction, self.owner.index))
+
     def addOther(self, other):
         self.other = other
         if self.color == 'orange':
@@ -171,6 +186,9 @@ class Portal:
         else:
             self.orange = other
             self.blue = self
+
+    def dist(self, other):
+        return abs(self.pos.x - other.x) + abs(self.pos.y - other.y)
 
 class Tile:
     def __init__(self, pos, hasHard, hasSoft, trailMaxCount, bombCount, portals):
@@ -181,31 +199,70 @@ class Tile:
         self.bomb = tryish(TypeError, int, bombCount)
         self.portals = portals
 
+        # dict from Dir to tiles
+        self.adj = {}
+        self.tile = None
+
+    def __hash__(self):
+        return hash((self.pos, self.hard, self.soft, self.trail, self.bomb, self.portals))
+
     def __str__(self):
-        return 'pos = %s, hard = %s, soft = %s, trail = %s, bomb = %s, portals = %s' %(self.pos, self.hard, self.soft, self.trail, self.bomb, self.portals)
+        return 'pos = %s, hard = %s, soft = %s, trail = %s, bomb = %s, portals = %s' \
+            % (self.pos, self.hard, self.soft, self.trail, self.bomb, self.portals)
 
         #      P|#
 
     # 
-    def walkable(self, dir):
+    def walkable(self, dir = None, dist = 0):
         '''
           is walkable from dir
           P|#
           True if dir == 'r'
         '''
-        if self.bomb or self.trail:
-            return False
+        result = set([])
 
-        if self.portals is None:
-            if self.hard or self.soft:
-                return False
-            return True
+        if dist == 0:
+            if self.bomb or self.trail:
+                return result
 
-        for p in self.portals:
-            if p.direction == dir.opposite() and p.other is not None:
-                return True
+            if self.portals is None:
+                if self.hard or self.soft:
+                    return result
+                result.add(self)
+                return result
 
-        return False
+            if dir is not None:
+                for p in self.portals:
+                    if p.direction == dir.opposite() and p.other is not None:
+                        result.add(self)
+                        return result
+
+            return result
+
+        if not self.walkable(dir):
+            return result
+
+        for d in self.adj:
+            adjTile = self.adj[d]
+            result.union(adjTile.walkable(d, dist - 1))
+
+        return result
+
+          
+    def walk(self, dir):
+        try:
+            adjTile = self.adj[dir]
+            if adjTile.walkable(dir):
+                for p in self.portals:
+                    if p.direction == dir.opposite() and p.other is not None:
+                        otherTile = p.other
+                        otherDir = p.other.direction
+                        return otherTile.walk(otherDir)
+                return adjTile
+        except KeyError:
+            pass
+
+        return None
 
 class Board:
     def __init__(self, game, size, hardBlockBoard, softBlockBoard, trailMap, bombMap, portalMap):
@@ -214,6 +271,7 @@ class Board:
         self.bombs = {}
         self.bombCount = {0:0, 1:0}
         self.trails = set([])
+        self.cache = {}
 
         for n, (h, s) in enumerate(zip(hardBlockBoard, softBlockBoard)):
             pos = Pos(listToGridPos(size, n))
@@ -253,6 +311,19 @@ class Board:
             self.board[pos] = Tile(pos, h, s, t, b, p)
                 
         self.size = (size, size)
+        self.MAXDIST = 3 * max(self.size)
+
+        for pos in self.board:
+            tile = self.board[pos]
+            for d, p in pos.getAdj().iteritems():
+                try:
+                    adjTile = self.board[p]
+                    tile.adj[d] = adjTile
+                except KeyError:
+                    pass
+            
+    def __hash__(self):
+        return hash(self.board)
 
     def __str__(self):
         s = ''
@@ -269,22 +340,46 @@ class Board:
         return None
 
     def isNextToSoft(self, pos):
+        try:
+            if pos in self.cache['isNextToSoft']:
+                return self.cache['isNextToSoft'][pos]
+        except KeyError:
+            self.cache['isNextToSoft'] = {}
+
         for d, p in pos.getAdj().iteritems():
             tile = self[p]
             if tile is not None and tile.soft:
+                self.cache['isNextToSoft'][pos] = d
                 return d
+
+        self.cache['isNextToSoft'][pos] = None
         return None
 
     def isNextToBomb(self, pos):
+        try:
+            if pos in self.cache['isNextToBomb']:
+                return self.cache['isNextToBomb'][pos]
+        except KeyError:
+            self.cache['isNextToBomb'] = {}
+
         if self[pos].bomb:
             return 'h'
         for d, p in pos.getAdj().iteritems():
             if self.board[p].bomb:
+                self.cache['isNextToBomb'][pos] = d
                 return d
+
+        self.cache['isNextToBomb'][pos] = None
         return None
 
     def distToBomb(self, pos):
-        d = sum(self.size) + 100
+        try:
+            if pos in self.cache['distToBomb']:
+                return self.cache['distToBomb'][pos]
+        except KeyError:
+            self.cache['distToBomb'] = {}
+
+        d = self.MAXDIST + 1
         for p in self.bombs:
             playerNum = self.bombs[p]
             bombDist = self.game.getPlayer(playerNum).bombRange
@@ -298,7 +393,23 @@ class Board:
                 if dist <= bombDist and dist < d:
                     d = dist
 
+        self.cache['distToBomb'][pos] = d
         return d
+
+    def distToSafe(self, pos):
+        tile = self.board[pos]
+        if not tile.walkable():
+            return self.MAXDIST + 1
+
+        if self.distToBomb(pos) > 100:
+            # No Bombs in sight
+            return 0
+        
+        minDist = self.MAXDIST + 1
+        for d, p in pos.getAdj().iteritems():
+            for t in tile.walkable(d, 1):
+                t.distToSafe(t.pos)
+                
 
 class Player:
     def __init__(self, data, board, index):
@@ -344,10 +455,14 @@ class Player:
 
         if self.bombPierce < self.bombRange:
             return 'buy_pierce'
-        elif self.bombRange < 10:
+        elif self.bombRange < 15:
             return 'buy_range'
         elif self.bombCount < 5:
             return 'buy_count'
+
+    def __hash__(self):
+        return hash((self.pos, self.bombCount, self.bombPierce, self.bombRange, self.alive, self.index))
+        #return hash((self.orientation, self.coins, self.pos, self.bombCount, self.bombPierce, self.bombRange, self.alive, self.index))
 
     def isNextToSoft(self):
         return self.board.isNextToSoft(self.pos)
@@ -372,7 +487,7 @@ class Player:
             t = self.board[p]
             if t is not None and t.walkable(d):
                 qual = self.board.distToBomb(p)
-                print 'd = %s, p = %s, qual = %s' % (d, p, qual)
+                #print 'd = %s, p = %s, qual = %s' % (d, p, qual)
                 if qual > ret[1]:
                     ret = ((d,), qual)
                 elif qual == ret[1]:
@@ -385,6 +500,9 @@ class Player:
 class BommerGame:
     def __init__(self, data):
         self.init(data)
+
+    def __hash__(self):
+        return hash((self.board, self.player, self.opponent))
 
     def init(self, data):
         self.state = None
@@ -437,7 +555,7 @@ class BommerGame:
         if d is not None:
             act = 'm' + str(d)
 
-        print 'dist = %s, soft = %s, can bomb = %s' % (b, self.player.isNextToSoft() is not None, self.player.canPlaceBomb())
+        #print 'dist = %s, soft = %s, can bomb = %s' % (b, self.player.isNextToSoft() is not None, self.player.canPlaceBomb())
 
         # If near bomb, move away
         if b <= sum(self.board.size):
@@ -458,6 +576,73 @@ class BommerGame:
         print 'act = %r' % act
         return act
 
-        
+    def qlearn(self, filename):
+        curState = hash(self)
+        try:
+            r = 0
+            if not self.player.alive:
+                r += -1
+                
+            if not self.opponent.alive:
+                r += 1
+            
+            actionSet = set([])
+            for action in possibleMoves:
+                try:
+                    actionMap.add((action, self.qvalues[(state, action)]))
+                except KeyError:
+                    actionMap.add((action, (r.random() * 2) - 1))
+
+            curAction = weightedChoice(actionMap)
+
+            curVal = self.qvalues[(self.lastState, self.lastAction)]
+            self.qvalues[(self.lastState, self.lastAction)] = curVal + \
+                self.alpha * (r + self.gamma * \
+                    (self.qvalues[(state, curAction)]) - curVal)
+            
+            self.lastState = state
+            self.lastAction = curAction
 
             
+            return curAction
+            
+        except AttributeError:
+            # Learning rate
+            self.alpha = 0.1
+            # Discount factor 
+            self.gamma = 0.5
+            self.qvalues = {}
+            self.lastState = None
+            self.lastAction = None
+
+        return ''
+
+            
+class hashDict:
+    def __init__(self, fileName):
+        self.fileName = fileName
+        try:
+            with open(fileName, 'r') as f:
+                self.size = f.readline()
+            self.width = len(self.size)
+            self.size = int(self.size)
+        except IOError:
+            self.size = 2**16
+            self.width = 2**4
+            
+            with open(fileName, 'w') as f:
+                f.write(self.size.ljust(self.width))
+                f.write(' ' * (self.width * self.size))
+
+    def __getitem__(self, key):
+        h = (hash(key) % self.size) + 1
+        with open(fileName, 'r') as f:
+             f.seek(h * self.width)
+             output = f.read(self.width)
+        return output.strip()
+
+    def __setitem__(self, key, value):
+        h = (hash(key) % self.size) + 1
+        with open(fileName, 'w') as f:
+            f.seek(h * self.width)
+            f.write(value.ljust(self.width))
