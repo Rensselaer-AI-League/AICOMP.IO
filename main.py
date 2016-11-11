@@ -62,7 +62,7 @@ for i in xrange(numGames):
             if r.json()[u'state'] != 'in progress':
                 game.qlearn('qvalues.dat')
                 break                
-        except ValueError:
+        except (ValueError, TypeError):
             pass
     
         #json = r.json()

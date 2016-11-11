@@ -77,6 +77,17 @@ def weightedChoice(choices):
             return c
    return r.choice(choices)[0]
 
+def bestChoice(choices):
+   best = ((None,), -100000)
+   for c, w in choices:
+      if w > best[1]:
+         best = ((c,), w)
+      elif w == best[1]:
+         best = (best[0] + (c,), w)
+   if len(best[0]) == 1:
+      return best[0][0]
+   return r.choice(best[0])
+
 def tryish(error, f, *args, **kargs):
    try:
       return f(*args, **kargs)
@@ -142,6 +153,13 @@ class Pos:
 
    def __hash__(self):
       return hash((self.x, self.y))
+   
+   def __getitem__(self, i):
+      if i == 0:
+         return self.x
+      elif i == 1:
+         return self.y
+      raise IndexError
 
    def __eq__(self, other):
       try:
@@ -171,6 +189,10 @@ class Pos:
       elif dir == 'h':
          return self
       return None
+   
+   def dist(self, other):
+      o = Pos(other)
+      return abs(self.x - o.x) + abs(self.y - o.y)
 
 class Portal:
    def __init__(self, pos, color, direction, owner, other = None):
@@ -283,6 +305,7 @@ class Board:
       self.bombCount = {0:0, 1:0}
       self.trails = set([])
       self.cache = {}
+      self.myPos = None
 
       for n, (h, s) in enumerate(zip(hardBlockBoard, softBlockBoard)):
          pos = Pos(listToGridPos(size, n))
@@ -336,7 +359,8 @@ class Board:
    def __hash__(self):
       l = []
       for pos in self.board:
-         l.append((hash(pos), hash(self.board[pos])))
+         if (self.myPos is not None and self.myPos.dist(pos) <= 4) or self.myPos is not None:
+            l.append((hash(pos), hash(self.board[pos])))
       l.sort()
       return hash(tuple(l))
 
@@ -535,6 +559,8 @@ class BommerGame:
 
          self.player =       Player(data[u'player'], self.board, self.playerIndex)
          self.opponent =     Player(data[u'opponent'], self.board, 1 - self.playerIndex)
+         
+         self.board.myPos = self.player.pos
 
          self.gameID =       data[u'gameID']
          self.playerID =     data[u'playerID']
@@ -606,6 +632,9 @@ class BommerGame:
          if b <= sum(self.board.size):
             reward += (b - 34/2) * 10
             
+         if self.lastState == curState:
+            reward -= 50
+            
          d, qual = self.player.bestWalk()
          if d is not None:
             reward += (qual - 34/2) * 5
@@ -650,9 +679,9 @@ class BommerGame:
 
       except AttributeError:
          # Learning rate
-         self.alpha = 0.99
+         self.alpha = 0.9
          # Discount factor 
-         self.gamma = 0.9
+         self.gamma = 0.5
          self.qvalues = hashDict(filename, 2**16, 2**4)
          self.lastState = None
          self.lastAction = None
