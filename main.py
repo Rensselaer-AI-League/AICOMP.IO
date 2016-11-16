@@ -8,7 +8,8 @@ import json
 import bommerGame
 
 practice = True
-numGames = 30000
+numGames = 100
+dataFile = 'qvalues_small.dat'
 
 #domain = 'http://upe21.cs.rpi.edu:3000'
 domain = 'http://aicomp.io'
@@ -49,8 +50,10 @@ for i in xrange(numGames):
     while True:
     
         # submit sample move
+        move = game.qlearn(dataFile)
+        #print '%r' % move
         r = requests.post(('%s/api/games/submit/' % domain) + gameID, 
-                          data={'playerID': playerID, 'move': game.qlearn('qvalues_small.dat'), 
+                          data={'playerID': playerID, 'move': move, 
                                 'devkey': userInfo["devkey"]}) 
     
         #print bool(game)
@@ -60,7 +63,7 @@ for i in xrange(numGames):
         try:
             game.update(r.json())
             if r.json()[u'state'] != 'in progress':
-                game.qlearn('qvalues.dat')
+                game.qlearn(dataFile)
                 break                
         except (ValueError, TypeError):
             pass

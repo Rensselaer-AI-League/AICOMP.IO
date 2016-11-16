@@ -75,7 +75,7 @@ def weightedChoice(choices):
          upto += w
          if upto >= rand:
             return c
-   return r.choice(choices)[0]
+   return r.choice(list(choices))[0]
 
 def bestChoice(choices):
    best = ((None,), -100000)
@@ -104,8 +104,8 @@ def listToGridPos(rowLen, i):
 #possibleMoves = ['mu', 'ml', 'mr', 'md', 'tu', 'tl', 'tr', 'td', 
 #                 'b', '', 'op', 'bp', 'buy_count', 'buy_range', 
 #                 'buy_pierce', 'buy_block']
-#possibleMoves = ['mu', 'ml', 'mr', 'md', 'b']
-possibleMoves = ['mu', 'ml', 'mr', 'md',  'b', 'buy_count', 'buy_range', 'buy_pierce']
+possibleMoves = ['mu', 'ml', 'mr', 'md', 'b']
+#possibleMoves = ['mu', 'ml', 'mr', 'md',  'b', 'buy_count', 'buy_range', 'buy_pierce']
 
 oppMap = {'u':'d', 'd':'u', 'l':'r', 'r':'l', 'h':'h'}
 dirMap = {'u':1, 'd':3, 'l':0, 'r':2, 'h':-1, -1:'h', 2:'r', 0:'l', 3:'d', 1:'u'}
@@ -265,8 +265,8 @@ class Tile:
             return result
 
          if dir is not None:
-            for p in self.portals:
-               if p.direction == dir.opposite() and p.other is not None:
+            for d, p in self.portals.iteritems():
+               if d == dir.opposite() and p.other is not None:
                   result.add(self)
                   return result
 
@@ -357,12 +357,14 @@ class Board:
                pass
 
    def __hash__(self):
+      viewSize = 4
       l = []
       for pos in self.board:
-         if (self.myPos is not None and self.myPos.dist(pos) <= 4) or self.myPos is not None:
+         if (self.myPos is not None and self.myPos.dist(pos) <= viewSize):
             l.append((hash(pos), hash(self.board[pos])))
       l.sort()
       return hash(tuple(l))
+      #return hash(tuple(self.board))
 
    def __str__(self):
       s = ''
@@ -523,6 +525,7 @@ class Player:
    def bestWalk(self):
       ret = ((None,), -100)
       for d, p in self.pos.getAdj().iteritems():
+         #print 'd = %s, p = %s' % (d, p)
          t = self.board[p]
          if t is not None and t.walkable(d):
             qual = self.board.distToBomb(p)
@@ -531,6 +534,7 @@ class Player:
                ret = ((d,), qual)
             elif qual == ret[1]:
                ret = (ret[0] + (d,), qual)
+
       if len(ret[0]) == 1:
          return (ret[0][0], ret[1])
       else:
@@ -539,9 +543,12 @@ class Player:
 class BommerGame:
    def __init__(self, data):
       self.init(data)
+      self.tick = 0
 
    def __hash__(self):
-      return hash((self.board, self.player, self.opponent))
+      #return hash((self.board, self.player, self.opponent))
+      #return hash((self.board, self.player))
+      return hash((self.board,))
 
    def init(self, data):
       self.state = None
@@ -567,7 +574,9 @@ class BommerGame:
 
          self.state =        data[u'state']
       except TypeError:
-         pass
+         return False
+
+      return True
 
    def __bool__(self):
       '''
@@ -584,8 +593,9 @@ class BommerGame:
       return self.state == 'complete'
 
    def update(self, data):
-      self.init(data)
-
+      if self.init(data):
+         self.tick += 1
+      
    def move(self):
       #availableDirs = self.player.walkable()
       act = ''
@@ -618,14 +628,30 @@ class BommerGame:
       return act
 
    def qlearn(self, filename):
+      defaultMoves = ['md', 'b', 'mu', 'op', 'mr', '', 'b', 'ml', 'md', 'md']
+      try:
+         move = defaultMoves[self.tick]
+         if self.player.index == 0:
+            print '%s\t%s\t%s' % (move.ljust(10), '??', '??')
+            return move
+         else:
+            try:
+               print '%s\t%s\t%s' % (oppMap[move].ljust(10), '??', '??')
+               return oppMap[move]
+            except KeyError:
+               print '%s\t%s\t%s' % (move.ljust(10), '??', '??')
+               return move
+      except IndexError:
+         print '>',
+
       curState = hash(self)
       try:
          reward = 0
          if not self.player.alive:
-            reward += -1000
+            reward += -10000
 
          if not self.opponent.alive:
-            reward += 1000
+            reward += 10000
             
             
          b = self.player.distToBomb()
@@ -639,17 +665,24 @@ class BommerGame:
          if d is not None:
             reward += (qual - 34/2) * 5
             
-         reward += self.player.coins
+         reward += (self.player.coins - self.lastCoins) * 100
 
+         if curState in self.states:
+            reward -= 500
+
+         mu = 10000
+         delta = 1000
          actionSet = set([])
          for action in possibleMoves:
             try:
                qval = float(self.qvalues[(curState, action)])
-               actionSet.add((action, (qval + 900) + (r.random() - .5)*250))
+               print action, qval
+               actionSet.add((action, (qval + mu) + (r.random() - .5)*delta))
             except (KeyError, ValueError):
-               actionSet.add((action, r.random()*1000 + 500))
+               actionSet.add((action, 300 + mu + (r.random() - .5)*delta))
 
          curAction = weightedChoice(actionSet)
+         #curAction = bestChoice(actionSet)
 
          #try:
          #   lastVal = int(self.qvalues[(self.lastState, self.lastAction)])
@@ -663,21 +696,31 @@ class BommerGame:
             
          self.lastVal = self.lastVal + self.alpha * (reward + self.gamma*curVal - self.lastVal)
          
+         try:
+            oldval = float(self.qvalues[(self.lastState, self.lastAction)])
+         except ValueError:
+            oldval = 0    
+
          if self.lastVal != 0:
             self.qvalues[(self.lastState, self.lastAction)] = '%.08e' % self.lastVal
+         else:
+            self.qvalues[(self.lastState, self.lastAction)] = ''
 
          try:
-            print '%s\t% 16.08f\t%s' % (self.lastAction.ljust(10), self.lastVal, reward)
-         except (TypeError, AttributeError):
-            pass
+            print '%d\t%s\t% 16.08f\t% 16.08f\t%s' % (curState, self.lastAction.ljust(10), oldval, self.lastVal, reward)
+         except (TypeError, AttributeError) as e:
+            print 'Error: %s' %e
          self.lastState = curState
          self.lastAction = curAction
          self.lastVal = curVal
+         self.lastCoins = self.player.coins
+         self.lastReward = reward
+         self.states.add(curState)
 
          
          return curAction
 
-      except AttributeError:
+      except AttributeError as e:
          # Learning rate
          self.alpha = 0.9
          # Discount factor 
@@ -686,6 +729,11 @@ class BommerGame:
          self.lastState = None
          self.lastAction = None
          self.lastVal = 0
+         self.lastCoins = 0
+         self.lastReward = 0
+         self.states = set([])
+
+         #print 'Error: %s' % e
 
       return ''
 
