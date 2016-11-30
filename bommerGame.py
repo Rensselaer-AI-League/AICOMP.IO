@@ -88,6 +88,12 @@ def bestChoice(choices):
       return best[0][0]
    return r.choice(best[0])
 
+def eGreedyChoice(choices, eps):
+   if r.random() < eps:
+      return bestChoice(choices)
+   else:
+      return weightedChoice(choices)
+
 def tryish(error, f, *args, **kargs):
    try:
       return f(*args, **kargs)
@@ -134,8 +140,11 @@ class Dir:
 
       return self.dir == other or self.dir == dirMap[other]
 
-   def opposite(self):
+   def __neg__(self):
       return Dir(oppMap[self.dir])
+
+   def opposite(self):
+      return -self
 
 
 
@@ -168,6 +177,17 @@ class Pos:
          pass
 
       return self.x == other[0] and self.y == other[1]
+
+   def __neg__(self):
+      return Pos(-self.x, -self.y)
+
+   def __add__(self, other):
+      o = Pos(other)
+      return Pos(self.x + o.x, self.y + o.y)
+
+   def __sub__(self, other):
+      o = Pos(other)
+      return Pos(self.x - o.x, self.y - o.y)
 
    def getAdj(self):
       l = {}
@@ -237,7 +257,17 @@ class Tile:
             l.append((hash(d), hash(self.portals[d])))
          l.sort()      
       return hash((self.pos, self.hard, self.soft, self.trail, self.bomb, tuple(l)))'''
-      return hash((self.pos, self.hard, self.soft, self.trail, self.bomb))
+      if self.hard:
+         return 1
+      if self.soft:
+         return 2
+      if self.trail:
+         return 3
+      if self.bomb:
+         return 4
+
+      return 0
+      #return hash((self.hard, self.soft, self.trail, self.bomb))
 
    def __str__(self):
       return 'pos = %s, hard = %s, soft = %s, trail = %s, bomb = %s, portals = %s' \
@@ -358,12 +388,14 @@ class Board:
 
    def __hash__(self):
       viewSize = 4
+      #s = ' ' * ((2*viewSize + 1)**2)
       l = []
       for pos in self.board:
          if (self.myPos is not None and self.myPos.dist(pos) <= viewSize):
             l.append((hash(pos), hash(self.board[pos])))
       l.sort()
-      return hash(tuple(l))
+      tiles = [i[1] for i in l]
+      return hash(tuple(tiles))
       #return hash(tuple(self.board))
 
    def __str__(self):
@@ -547,8 +579,8 @@ class BommerGame:
 
    def __hash__(self):
       #return hash((self.board, self.player, self.opponent))
-      #return hash((self.board, self.player))
-      return hash((self.board,))
+      return hash((self.board, self.player))
+      #return hash((self.board,))
 
    def init(self, data):
       self.state = None
@@ -636,8 +668,12 @@ class BommerGame:
             return move
          else:
             try:
-               print '%s\t%s\t%s' % (oppMap[move].ljust(10), '??', '??')
-               return oppMap[move]
+               if move[0] == 'm':
+                  print '%s\t%s\t%s' % (('m' + oppMap[move[1]]).ljust(10), '??', '??')
+                  return 'm' + oppMap[move[1]]
+               else:
+                  print '%s\t%s\t%s' % (move.ljust(10), '??', '??')
+                  return move
             except KeyError:
                print '%s\t%s\t%s' % (move.ljust(10), '??', '??')
                return move
@@ -676,13 +712,14 @@ class BommerGame:
          for action in possibleMoves:
             try:
                qval = float(self.qvalues[(curState, action)])
-               print action, qval
+               #print action, qval
                actionSet.add((action, (qval + mu) + (r.random() - .5)*delta))
             except (KeyError, ValueError):
                actionSet.add((action, 300 + mu + (r.random() - .5)*delta))
 
-         curAction = weightedChoice(actionSet)
+         #curAction = weightedChoice(actionSet)
          #curAction = bestChoice(actionSet)
+         curAction = eGreedyChoice(actionSet, self.eps)
 
          #try:
          #   lastVal = int(self.qvalues[(self.lastState, self.lastAction)])
@@ -725,6 +762,8 @@ class BommerGame:
          self.alpha = 0.9
          # Discount factor 
          self.gamma = 0.5
+         # Greedyness
+         self.eps = 0.9
          self.qvalues = hashDict(filename, 2**16, 2**4)
          self.lastState = None
          self.lastAction = None

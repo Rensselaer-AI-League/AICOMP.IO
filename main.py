@@ -7,8 +7,8 @@ import json
 
 import bommerGame
 
-practice = True
-numGames = 100
+practice = False
+numGames = 1000
 dataFile = 'qvalues_small.dat'
 
 #domain = 'http://upe21.cs.rpi.edu:3000'
