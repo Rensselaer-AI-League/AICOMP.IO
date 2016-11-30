@@ -4,10 +4,18 @@ import time
 import requests 
 import random
 import json
+import sys
 
 import bommerGame
 
-practice = False
+practice = True
+
+for i, tok in enumerate(sys.argv):
+    if tok == '-p':
+        if sys.argv[i+1][0].lower() == 'f':
+            practice = False
+
+
 numGames = 1000
 dataFile = 'qvalues_small.dat'
 

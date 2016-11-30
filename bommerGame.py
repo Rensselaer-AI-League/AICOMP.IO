@@ -677,7 +677,7 @@ class BommerGame:
             except KeyError:
                print '%s\t%s\t%s' % (move.ljust(10), '??', '??')
                return move
-      except IndexError:
+      except (IndexError, AttributeError):
          print '>',
 
       curState = hash(self)
@@ -761,7 +761,7 @@ class BommerGame:
          # Learning rate
          self.alpha = 0.9
          # Discount factor 
-         self.gamma = 0.5
+         self.gamma = 0.9
          # Greedyness
          self.eps = 0.9
          self.qvalues = hashDict(filename, 2**16, 2**4)
