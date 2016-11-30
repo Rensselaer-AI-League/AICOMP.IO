@@ -523,7 +523,7 @@ class Player:
       return self.bombCount - self.bombsInPlay > 0
 
    def bestBuy(self):
-      if self.coins < 1:
+      if self.coins < 5:
          return None
 
       if self.bombPierce < self.bombRange:
@@ -579,11 +579,12 @@ class BommerGame:
 
    def __hash__(self):
       #return hash((self.board, self.player, self.opponent))
-      return hash((self.board, self.player))
-      #return hash((self.board,))
+      #return hash((self.board, self.player))
+      return hash((self.board,))
 
    def init(self, data):
       self.state = None
+      self.board = None
       try:
          self.board =        Board(game = self,
                                    size = data[u'boardSize'], 
@@ -631,30 +632,33 @@ class BommerGame:
    def move(self):
       #availableDirs = self.player.walkable()
       act = ''
-      b = self.player.distToBomb()
-      d, qual = self.player.bestWalk()
-      buy = self.player.bestBuy()
-
-      if d is not None:
-         act = 'm' + str(d)
-
-      #print 'dist = %s, soft = %s, can bomb = %s' % (b, self.player.isNextToSoft() is not None, self.player.canPlaceBomb())
-
-      # If near bomb, move away
-      if b <= sum(self.board.size):
+      try:
+         b = self.player.distToBomb()
+         d, qual = self.player.bestWalk()
+         buy = self.player.bestBuy()
+   
          if d is not None:
-            print 'If near bomb, move away'
             act = 'm' + str(d)
-
-      # If near soft and can place bomb, do so
-      elif self.player.isNextToSoft() is not None and self.player.canPlaceBomb():
-         print 'If near soft and can place bomb, do so'
-         act = 'b'
-
-      # If safe and have $$, buy stuff
-      elif buy is not None:
-         print 'If safe and have $%s, buy stuff' % self.player.coins
-         act = buy
+   
+         #print 'dist = %s, soft = %s, can bomb = %s' % (b, self.player.isNextToSoft() is not None, self.player.canPlaceBomb())
+   
+         # If near bomb, move away
+         if b <= sum(self.board.size):
+            if d is not None:
+               print 'If near bomb, move away'
+               act = 'm' + str(d)
+   
+         # If near soft and can place bomb, do so
+         elif self.player.isNextToSoft() is not None and self.player.canPlaceBomb():
+            print 'If near soft and can place bomb, do so'
+            act = 'b'
+   
+         # If safe and have $$, buy stuff
+         elif buy is not None:
+            print 'If safe and have $%s, buy stuff' % self.player.coins
+            act = buy
+      except AttributeError as e:
+         print e
 
       print 'act = %r' % act
       return act
@@ -719,7 +723,8 @@ class BommerGame:
 
          #curAction = weightedChoice(actionSet)
          #curAction = bestChoice(actionSet)
-         curAction = eGreedyChoice(actionSet, self.eps)
+         #curAction = eGreedyChoice(actionSet, self.eps)
+         curAction = self.move()
 
          #try:
          #   lastVal = int(self.qvalues[(self.lastState, self.lastAction)])
@@ -763,7 +768,7 @@ class BommerGame:
          # Discount factor 
          self.gamma = 0.9
          # Greedyness
-         self.eps = 0.9
+         self.eps = 0.9999
          self.qvalues = hashDict(filename, 2**16, 2**4)
          self.lastState = None
          self.lastAction = None
