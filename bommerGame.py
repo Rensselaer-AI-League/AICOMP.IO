@@ -110,8 +110,10 @@ def listToGridPos(rowLen, i):
 #possibleMoves = ['mu', 'ml', 'mr', 'md', 'tu', 'tl', 'tr', 'td', 
 #                 'b', '', 'op', 'bp', 'buy_count', 'buy_range', 
 #                 'buy_pierce', 'buy_block']
-possibleMoves = ['mu', 'ml', 'mr', 'md', 'b']
+#possibleMoves = ['mu', 'ml', 'mr', 'md', 'b']
+#possibleMoves = ['mu', 'ml', 'mr', 'md']
 #possibleMoves = ['mu', 'ml', 'mr', 'md',  'b', 'buy_count', 'buy_range', 'buy_pierce']
+possibleMoves = ['mu', 'ml', 'mr', 'md', 'bp', 'buy_count', 'buy_range', 'buy_pierce', 'buy_block']
 
 oppMap = {'u':'d', 'd':'u', 'l':'r', 'r':'l', 'h':'h'}
 dirMap = {'u':1, 'd':3, 'l':0, 'r':2, 'h':-1, -1:'h', 2:'r', 0:'l', 3:'d', 1:'u'}
@@ -629,7 +631,7 @@ class BommerGame:
       if self.init(data):
          self.tick += 1
       
-   def move(self):
+   def move(self, qmove = None):
       #availableDirs = self.player.walkable()
       act = ''
       try:
@@ -639,6 +641,8 @@ class BommerGame:
    
          if d is not None:
             act = 'm' + str(d)
+            if qmove is not None and r.random() < 0.5:
+               act = qmove
    
          #print 'dist = %s, soft = %s, can bomb = %s' % (b, self.player.isNextToSoft() is not None, self.player.canPlaceBomb())
    
@@ -649,7 +653,7 @@ class BommerGame:
                act = 'm' + str(d)
    
          # If near soft and can place bomb, do so
-         elif self.player.isNextToSoft() is not None and self.player.canPlaceBomb():
+         elif self.player.isNextToSoft() is not None and self.player.canPlaceBomb() and r.random() < 0.001:
             print 'If near soft and can place bomb, do so'
             act = 'b'
    
@@ -657,6 +661,7 @@ class BommerGame:
          elif buy is not None:
             print 'If safe and have $%s, buy stuff' % self.player.coins
             act = buy
+            
       except AttributeError as e:
          print e
 
@@ -724,7 +729,7 @@ class BommerGame:
          #curAction = weightedChoice(actionSet)
          #curAction = bestChoice(actionSet)
          #curAction = eGreedyChoice(actionSet, self.eps)
-         curAction = self.move()
+         curAction = self.move(eGreedyChoice(actionSet, self.eps))
 
          #try:
          #   lastVal = int(self.qvalues[(self.lastState, self.lastAction)])
